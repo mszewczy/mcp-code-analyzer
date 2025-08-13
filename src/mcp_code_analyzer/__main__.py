@@ -1,4 +1,5 @@
 import json
+import asyncio
 from flask import Flask, request, Response, stream_with_context
 from queue import Queue
 from threading import Thread
@@ -10,16 +11,23 @@ app = Flask(__name__)
 # Kolejka do bezpiecznej komunikacji między wątkami
 analysis_queue = Queue()
 
-def run_analysis_in_background(file_content, analysis_type):
+def analysis_thread_target(file_content, analysis_type):
     """
-    Funkcja wykonująca analizę w osobnym wątku, aby nie blokować serwera.
-    Wynik umieszcza w kolejce.
+    Funkcja synchroniczna, która jest celem dla wątku.
+    Tworzy nową pętlę zdarzeń asyncio i uruchamia w niej asynchroniczną analizę kodu.
+    """
+    asyncio.run(run_analysis_async(file_content, analysis_type))
+
+async def run_analysis_async(file_content, analysis_type):
+    """
+    Asynchroniczna funkcja wykonująca analizę. Czeka na wynik (await)
+    zanim umieści go w kolejce.
     """
     try:
         server = CodeAnalyzerServer()
-        # POPRAWKA: Tworzymy słownik i wywołujemy istniejącą metodę 'handle_request'
         request_data = {"file": file_content, "type": analysis_type}
-        result = server.handle_request(request_data)
+        # POPRAWKA: Używamy 'await', aby poczekać na wynik asynchronicznej funkcji
+        result = await server.handle_request(request_data)
         analysis_queue.put({"type": "result", "data": result})
     except Exception as e:
         analysis_queue.put({"type": "error", "data": str(e)})
@@ -35,8 +43,8 @@ def analyze():
         if not data or "file" not in data or "type" not in data:
             return Response(json.dumps({"error": "Invalid request body"}), status=400, mimetype='application/json')
 
-        # Uruchomienie analizy w osobnym wątku
-        thread = Thread(target=run_analysis_in_background, args=(data["file"], data["type"]))
+        # Uruchomienie analizy w osobnym wątku, który obsłuży logikę asynchroniczną
+        thread = Thread(target=analysis_thread_target, args=(data["file"], data["type"]))
         thread.start()
 
         return Response(json.dumps({"status": "Analysis initiated"}), status=202, mimetype='application/json')
