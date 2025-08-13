@@ -8,7 +8,6 @@ from .server import CodeAnalyzerServer
 app = Flask(__name__)
 
 # Kolejka do bezpiecznej komunikacji między wątkami
-# Będzie przechowywać wyniki analizy do wysłania przez SSE.
 analysis_queue = Queue()
 
 def run_analysis_in_background(file_content, analysis_type):
@@ -18,7 +17,9 @@ def run_analysis_in_background(file_content, analysis_type):
     """
     try:
         server = CodeAnalyzerServer()
-        result = server.analyze_code(file_content, analysis_type)
+        # POPRAWKA: Tworzymy słownik i wywołujemy istniejącą metodę 'handle_request'
+        request_data = {"file": file_content, "type": analysis_type}
+        result = server.handle_request(request_data)
         analysis_queue.put({"type": "result", "data": result})
     except Exception as e:
         analysis_queue.put({"type": "error", "data": str(e)})
@@ -63,7 +64,6 @@ def stream():
 def main():
     """Główna funkcja uruchamiająca serwer."""
     # Używamy prostego serwera wbudowanego we Flask.
-    # Dla środowiska produkcyjnego zalecany jest serwer WSGI, np. Gunicorn.
     app.run(host="0.0.0.0", port=8000, threaded=True)
 
 if __name__ == "__main__":
